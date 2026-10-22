@@ -12,6 +12,7 @@ import { sweep, geometry } from "../core/kinematics";
 import { PRESETS, makeModel } from "../core/presets";
 import type { BikeModel } from "../core/types";
 import { openText, saveText } from "./io";
+import { stepBodies, toStep } from "../core/step";
 
 
 // ---------- État ----------
@@ -367,6 +368,13 @@ $("btnCsv").addEventListener("click", async () => {
   if (!res || res.error) return;
   try { await saveText(fileName.replace(/\.\w+$/, "") + "-courbes.csv", csv(), [{ name: "CSV", extensions: ["csv"] }]); }
   catch (e) { showError("Export impossible : " + e); }
+});
+$("btn3d").addEventListener("click", async () => {
+  if (!res || res.error) return;
+  const pose = res.poses[poseIdx];
+  const base = fileName.replace(/\.\w+$/, "") + `-${pose.travel.toFixed(0)}mm`;
+  try { await saveText(base + ".step", toStep(stepBodies(model, pose.P), base), [{ name: "STEP", extensions: ["step", "stp"] }]); }
+  catch (e) { showError("Export 3D impossible : " + e); }
 });
 function showError(msg: string) { const err = $("err"); err.hidden = false; err.textContent = msg; }
 

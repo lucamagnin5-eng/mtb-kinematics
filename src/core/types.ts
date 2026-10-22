@@ -5,6 +5,10 @@ export interface Vec { x: number; y: number }
 export interface Point extends Vec {
   fixed: boolean;
   label: string;
+  /** Diamètre de l'interface pour l'export 3D (mm). Valeur par défaut selon le rôle du point. */
+  d?: number;
+  /** Largeur de l'interface (le long de l'axe du pivot) pour l'export 3D (mm). */
+  w?: number;
 }
 
 export interface Setup {
