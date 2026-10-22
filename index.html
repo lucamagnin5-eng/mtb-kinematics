@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier cinématique MTB</title>
+<link rel="stylesheet" href="/src/ui/style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Atelier <span>cinématique</span> MTB</h1>
+    <span class="tag" id="fileName">Nouveau projet</span>
+    <div class="tools">
+      <select id="preset" aria-label="Modèle de suspension"></select>
+      <button id="btnReset">Réinitialiser</button>
+      <button id="btnOpen">Ouvrir…</button>
+      <button id="btnSave">Enregistrer…</button>
+      <button id="btnCsv">Exporter CSV…</button>
+      <button id="btn3d" disabled title="Prochaine version">Export 3D (STEP)</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <aside>
+      <section class="panel">
+        <h2>Amortisseur et sag</h2>
+        <div class="fields" id="f-shock"></div>
+      </section>
+      <section class="panel">
+        <h2>Transmission et roues</h2>
+        <div class="fields" id="f-drive"></div>
+      </section>
+      <section class="panel">
+        <h2>Fourche et position</h2>
+        <div class="fields" id="f-front"></div>
+      </section>
+      <section class="panel">
+        <h2>Pivots (mm, repère boîtier)</h2>
+        <table class="pts"><thead><tr><th>Point</th><th>x</th><th>y</th></tr></thead><tbody id="pts"></tbody></table>
+        <p class="note">Glisse les points sur la vue ou saisis les cotes. Les longueurs des biellettes sont prises à l'état détendu.</p>
+      </section>
+    </aside>
+
+    <div class="stage">
+      <section class="panel viewer">
+        <canvas id="bike" aria-label="Vue latérale du vélo"></canvas>
+        <div class="err" id="err" hidden></div>
+        <div class="bar">
+          <input type="range" id="travel" min="0" max="1000" value="0" aria-label="Position dans le débattement">
+          <div class="read" id="read"></div>
+        </div>
+        <div class="toggles" id="toggles"></div>
+      </section>
+
+      <div class="row2">
+        <div class="charts" id="charts"></div>
+        <section class="panel">
+          <h2>Géométrie</h2>
+          <table class="geo" id="geo"></table>
+          <p class="note">Mesurée roues au sol, fourche à son sag. Chaînes et cotes recalculées à chaque pas de 0,5&nbsp;mm.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/ui/main.ts"></script>
+</body>
+</html>
