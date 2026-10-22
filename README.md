@@ -15,6 +15,10 @@ d'une suspension arrière de VTT, dans l'esprit de Linkage, avec un solveur gén
 - **Géométrie** détendue, au sag et à la position courante : angles de direction et de selle,
   reach, stack, hauteur et drop du boîtier, bases, front center, empattement, chasse, assiette.
 - **Fichiers** : projets `.mtbk` (JSON) à ouvrir / enregistrer, export CSV des courbes.
+- **Export 3D STEP** (AP214) à la position affichée : un cylindre nommé par pivot et interface
+  (axe arrière 12×148, boîtier 41×73, œils d'amortisseur 8×22, pivots 15×60, tubes de direction
+  et de selle), plus le squelette des biellettes et de l'amortisseur dans le plan médian (z = 0).
+  Les diamètres et largeurs se règlent par point avec les champs `d` et `w` du fichier projet.
 
 ## Conventions
 
@@ -55,7 +59,7 @@ src-tauri/     coquille desktop Tauri (Rust)
 
 ## Prochaines étapes
 
-- Export 3D (STEP) des axes de pivots, entraxes et interfaces.
+- Saisie des diamètres / largeurs d'interface dans l'interface (aujourd'hui dans le fichier projet).
 - Comparaison de deux vélos en superposition.
 - Poulie folle (high pivot), étrier sur un autre corps que celui de l'axe.
 - Kickback exact avec rotation du pignon et de la roue.
