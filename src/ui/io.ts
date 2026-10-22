@@ -34,6 +34,15 @@ export async function saveText(defaultName: string, text: string, filters: FileF
     await writeTextFile(path, text);
     return baseName(path);
   }
+  // Page hébergée sur claude.ai : le bac à sable bloque les liens de téléchargement,
+  // on passe par la capacité "downloads" (extensions limitées : .step → .step.txt).
+  const dl = await claudeDownloads();
+  if (dl) {
+    const ext = defaultName.split(".").pop() ?? "";
+    const name = ext === "csv" || ext === "json" ? defaultName : ext === "mtbk" ? defaultName.replace(/\.mtbk$/, ".json") : defaultName + ".txt";
+    try { await dl.save({ filename: name, data: text }); return name; }
+    catch (e) { if ((e as { code?: string }).code === "declined") return null; throw e; }
+  }
   const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
@@ -41,6 +50,12 @@ export async function saveText(defaultName: string, text: string, filters: FileF
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return defaultName;
+}
+
+type Downloads = { save(r: { filename: string; data: string }): Promise<unknown> };
+async function claudeDownloads(): Promise<Downloads | null> {
+  const c = (window as unknown as { claude?: { use?(n: string): Promise<Downloads | null> } }).claude;
+  return c?.use ? c.use("downloads") : null;
 }
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
