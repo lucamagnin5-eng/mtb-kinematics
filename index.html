@@ -27,11 +27,27 @@
         <h2>Suspension layout</h2>
         <select id="preset" aria-label="Suspension layout" class="wide"></select>
         <p class="note" id="presetDesc"></p>
+        <label class="check"><input type="checkbox" id="lock"> Lock frame</label>
+        <p class="note">Locked: the frame and pivots are fixed; change the fork, the shock and the flip chips to see the geometries this frame allows.</p>
+      </section>
+      <section class="panel">
+        <h2>Compare</h2>
+        <p class="note" id="refName"></p>
+        <div class="btns">
+          <button id="refSet">Freeze current bike</button>
+          <button id="refOpen">Load project…</button>
+          <button id="refClear">Clear</button>
+        </div>
       </section>
       <section class="panel">
         <h2>Frame (BB reference)</h2>
         <div class="fields" id="f-frame"></div>
         <p class="note">Design values in the frame axes, measured from the bottom bracket centre. The geometry table shows the values measured on the ground.</p>
+      </section>
+      <section class="panel">
+        <h2>Flip chips &amp; dropouts</h2>
+        <div id="f-chips"></div>
+        <p class="note">Offsets in mm, frame axes, from the base position of the point at full extension. The parts keep their dimensions and the suspension is re-assembled at the shock eye-to-eye.</p>
       </section>
       <section class="panel">
         <h2>Shock</h2>
@@ -50,13 +66,13 @@
         <div class="fields" id="f-drive"></div>
       </section>
       <section class="panel">
-        <h2>Rider</h2>
+        <h2>Rider &amp; loads</h2>
         <div class="fields" id="f-rider"></div>
       </section>
       <section class="panel">
         <h2>Pivots (mm, BB origin)</h2>
         <table class="pts"><thead><tr><th>Point</th><th>x</th><th>y</th></tr></thead><tbody id="pts"></tbody></table>
-        <p class="note">Drag the points in the view or type coordinates. Link lengths are taken at full extension.</p>
+        <p class="note" id="ptsNote"></p>
       </section>
     </aside>
 
@@ -80,8 +96,22 @@
           <h2>Geometry</h2>
           <table class="geo" id="geo"></table>
           <p class="note">Measured with both wheels on the ground. Static: shock and fork extended. Sag: rear and fork at their sag. Current: the two sliders.</p>
+          <h2 class="sp">Pivot forces</h2>
+          <table class="geo" id="forces"></table>
+          <p class="note" id="loadNote"></p>
         </section>
       </div>
+
+      <section class="panel">
+        <details id="explorer">
+          <summary><h2>Geometry explorer</h2></summary>
+          <div class="exbar">
+            <label>Measured at <select id="exAt"><option value="sag" selected>Sag</option><option value="static">Static</option></select></label>
+          </div>
+          <div class="scroll"><table class="geo ex" id="exTable"></table></div>
+          <p class="note" id="exNote"></p>
+        </details>
+      </section>
     </div>
   </div>
 </div>

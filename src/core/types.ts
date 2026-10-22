@@ -24,6 +24,21 @@ export interface Setup {
   idlerTeeth: number;
   cogHeight: number;      // hauteur du centre de gravité au sol (mm)
   saddleHeight: number;   // hauteur de selle depuis le boîtier (mm)
+  /** Charge verticale sur la roue arrière pour le calcul des efforts aux pivots (N). */
+  rearLoad?: number;
+}
+
+/**
+ * Flip chip ou patte arrière réglable : positions possibles d'un point, en décalage par
+ * rapport à sa position de base (repère cadre, état détendu). La pièce qui porte la puce
+ * est le cadre pour un point fixe, sinon un des corps mobiles (index dans `bodies`).
+ */
+export interface FlipChip {
+  name: string;
+  point: string;
+  body?: number;
+  positions: { label: string; dx: number; dy: number }[];
+  active: number;
 }
 
 export interface BikeModel {
@@ -47,4 +62,7 @@ export interface BikeModel {
   headBottom: string;
   seatTop: string;
   seatBottom: string;
+  chips?: FlipChip[];
+  /** Cadre figé : seuls la fourche, l'amortisseur et les flip chips changent. */
+  locked?: boolean;
 }
