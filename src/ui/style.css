@@ -69,7 +69,7 @@ select.wide { width: 100%; }
 .toggles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .toggles input { accent-color: var(--accent); }
 .err { color: var(--accent); font-weight: 600; padding: 10px 14px; }
-.row2 { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; align-items: start; }
 @media (max-width: 1180px) { .row2 { grid-template-columns: minmax(0, 1fr); } }
 .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 .chart { position: relative; }
@@ -92,3 +92,29 @@ select.wide { width: 100%; }
 .modal .btns { display: flex; flex-wrap: wrap; gap: 8px; }
 .status { font-size: 13px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+/* v0.3 : comparaison, flip chips, efforts, explorateur */
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+button.mini { padding: 2px 8px; font-size: 12.5px; }
+aside > .panel > .check { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13.5px; }
+.chip { border: 1px solid var(--grid); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.chip .fields input[type=text] { font-family: var(--f-body); }
+.chip .pts input[type=radio] { width: auto; min-width: 0; accent-color: var(--accent); }
+.chip .pts input[type=text] { font-family: var(--f-body); }
+.pts input:disabled, .fields input:disabled, .fields select:disabled { opacity: .6; }
+.row2 > .panel { overflow-x: auto; }
+.geo td.up { color: var(--s3); }
+.geo td.down { color: var(--accent); }
+h2.sp { margin-top: 16px; }
+.chart .sub i.dash { background: none; border-top: 2px dashed var(--muted); height: 0; }
+#explorer summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+#explorer summary::-webkit-details-marker { display: none; }
+#explorer summary::before { content: "▸"; color: var(--muted); }
+#explorer[open] summary::before { content: "▾"; }
+#explorer summary h2 { margin: 0; }
+.exbar { display: flex; gap: 12px; align-items: center; font-size: 13px; color: var(--muted); margin: 10px 0; }
+.scroll { overflow-x: auto; }
+.geo.ex th, .geo.ex td { white-space: nowrap; padding-inline: 8px; }
+.geo.ex td { font-family: var(--f-mono); }
+.geo.ex tr[data-i] { cursor: pointer; }
+.geo.ex tr[data-i]:hover td { background: var(--grid); }
+.geo.ex tr.cur td { background: var(--accent-soft); font-weight: 600; }

@@ -3,7 +3,7 @@
 Logiciel desktop (Windows / macOS) pour concevoir et analyser la géométrie et la cinématique
 d'une suspension arrière de VTT, dans l'esprit de Linkage, avec un solveur générique.
 
-## Ce que fait la version 0.2
+## Ce que fait la version 0.3
 
 Interface en anglais.
 
@@ -22,6 +22,15 @@ Interface en anglais.
 - **Courbes** : rapport de levier, anti-squat (3 pignons), anti-rise, pedal kickback,
   trajectoire d'axe, course amortisseur utilisée.
 - **Géométrie** mesurée au sol : statique, au sag, et à la position des curseurs.
+- **Efforts aux pivots** (v0.3) : statique plane pour une charge verticale réglable sur la roue arrière ;
+  effort dans chaque pivot et dans l'amortisseur, en tableau, en courbes et sur la vue.
+- **Comparaison** (v0.3) : figer le vélo actuel ou charger un projet comme référence ; il s'affiche en
+  pointillés sur la vue et les courbes, et la géométrie au sag est comparée (colonne Δ).
+- **Flip chips et pattes réglables** (v0.3) : positions possibles d'un pivot ou de l'axe arrière.
+  Les pièces gardent leurs cotes et la suspension est remontée à l'entraxe de l'amortisseur, comme sur un vrai vélo.
+- **Cadre figé et explorateur de géométrie** (v0.3) : le cadre et les pivots sont verrouillés ; on change la
+  fourche, l'amortisseur et les puces. L'explorateur liste la géométrie de toutes les combinaisons
+  puces × débattements de la fourche.
 - **Fichiers** : projets `.mtbk` (JSON, version 2), export CSV, export 3D STEP (AP214) des pivots,
   interfaces et biellettes.
 

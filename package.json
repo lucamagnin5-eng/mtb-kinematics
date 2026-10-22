@@ -1,7 +1,7 @@
 {
   "name": "mtb-kinematics",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Logiciel de g\u00e9om\u00e9trie et de cin\u00e9matique de suspension VTT",
   "scripts": {

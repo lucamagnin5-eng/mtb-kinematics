@@ -93,21 +93,26 @@ export function solveLinear(A: number[][], b: number[]): number[] | null {
   return x;
 }
 
-/** Inconnues = coordonnées des points mobiles ; longueurs figées à l'état détendu. */
-export function compile(model: BikeModel): Compiled {
+/** Inconnues = coordonnées des points mobiles ; longueurs figées à l'état détendu (ou imposées). */
+export function compile(model: BikeModel, lengths?: number[]): Compiled {
   const ids = Object.keys(model.points);
   const moving = ids.filter(id => !model.points[id].fixed);
   const index: Record<string, number> = {};
   moving.forEach((id, i) => (index[id] = i));
-  const links = model.links.map(([a, b]) => ({ a, b, L: dist(model.points[a], model.points[b]) }));
+  const links = model.links.map(([a, b], i) => ({ a, b, L: lengths?.[i] ?? dist(model.points[a], model.points[b]) }));
   const nUnk = moving.length * 2;
   return { ids, moving, index, links, nUnk, dof: nUnk - links.length };
 }
 
 export function solvePose(model: BikeModel, C: Compiled, guess: Record<string, Vec>, axleY: number): Pose | null {
+  return solveDriven(model, C, guess, { axleY });
+}
+
+/** Pose pilotée soit par la hauteur de l'axe arrière, soit par la longueur de l'amortisseur. */
+export function solveDriven(model: BikeModel, C: Compiled, guess: Record<string, Vec>, drv: { axleY: number } | { shock: number }): Pose | null {
   const P: Pose = {};
   for (const id of C.ids) P[id] = { ...(guess[id] ?? model.points[id]) };
-  const ax = model.axle;
+  const ax = model.axle, [sa, sb] = model.shock;
   for (let it = 0; it < 40; it++) {
     const F: number[] = [];
     const J: number[][] = [];
@@ -119,9 +124,16 @@ export function solvePose(model: BikeModel, C: Compiled, guess: Record<string, V
       if (b in C.index) { row[2 * C.index[b]] -= dx / d; row[2 * C.index[b] + 1] -= dy / d; }
       J.push(row);
     }
-    F.push(P[ax].y - axleY);
     const row = new Array<number>(C.nUnk).fill(0);
-    row[2 * C.index[ax] + 1] = 1;
+    if ("axleY" in drv) {
+      F.push(P[ax].y - drv.axleY);
+      row[2 * C.index[ax] + 1] = 1;
+    } else {
+      const dx = P[sa].x - P[sb].x, dy = P[sa].y - P[sb].y, d = Math.hypot(dx, dy);
+      F.push(d - drv.shock);
+      if (sa in C.index) { row[2 * C.index[sa]] += dx / d; row[2 * C.index[sa] + 1] += dy / d; }
+      if (sb in C.index) { row[2 * C.index[sb]] -= dx / d; row[2 * C.index[sb] + 1] -= dy / d; }
+    }
     J.push(row);
     if (Math.max(...F.map(Math.abs)) < 1e-10) return P;
     const step = solveLinear(J, F.map(v => -v));
