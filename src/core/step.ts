@@ -20,6 +20,7 @@ function interfaceSize(model: BikeModel, id: string): { d: number; w: number } {
   const p = model.points[id];
   let def = { d: 15, w: 60 };                          // pivot de suspension
   if (id === model.axle) def = { d: 12, w: 148 };      // axe traversant Boost
+  else if (id === model.shock[0] && model.setup.shock.mount === "trunnion") def = { d: 10, w: 46 }; // trunnion (corps)
   else if (model.shock.includes(id)) def = { d: 8, w: 22 }; // œil d'amortisseur
   else if (id === "BB") def = { d: 41, w: 73 };        // boîtier
   return { d: p.d ?? def.d, w: p.w ?? def.w };

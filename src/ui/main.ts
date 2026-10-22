@@ -1,15 +1,17 @@
 // Interface de l'atelier : vue vélo éditable, courbes et tableau de géométrie.
 // La couche d'affichage reste volontairement peu typée ; le calcul vit dans src/core.
 
-import "@fontsource/barlow/400.css";
-import "@fontsource/barlow/500.css";
-import "@fontsource/barlow/600.css";
-import "@fontsource/barlow-condensed/500.css";
-import "@fontsource/barlow-condensed/600.css";
-import "@fontsource/jetbrains-mono/400.css";
-import "@fontsource/jetbrains-mono/500.css";
-import { sweep, geometry } from "../core/kinematics";
-import { PRESETS, makeModel } from "../core/presets";
+import "@fontsource/barlow/latin-400.css";
+import "@fontsource/barlow/latin-500.css";
+import "@fontsource/barlow/latin-600.css";
+import "@fontsource/barlow-condensed/latin-500.css";
+import "@fontsource/barlow-condensed/latin-600.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
+import { CHAINRINGS, COGS, FORKS, IDLERS, SHOCKS, TIRE_WIDTHS, WHEELS, forkA2C, forkOffsets, type ShockMount, type WheelSize } from "../core/catalog";
+import { fitShock, readFrame, setIdler, writeFrame, type FrameDims } from "../core/frame";
+import { forkSagMM, frontRadius, geometry, groundFor, rearRadius, sweep } from "../core/kinematics";
+import { LAYOUTS, makeModel } from "../core/presets";
 import type { BikeModel } from "../core/types";
 import { openText, saveText } from "./io";
 import { stepBodies, toStep } from "../core/step";
@@ -18,32 +20,107 @@ import { stepBodies, toStep } from "../core/step";
 // ---------- État ----------
 const $ = (id: string) => document.getElementById(id) as any;
 let model: BikeModel, res: any, poseIdx = 0, sagIdx = 0, drag: any = null, hoverPt: string | null = null;
+let forkComp = 0; // compression de fourche affichée (mm), indépendante de l'arrière
 const show = { ic: true, as: true, ar: true, path: true, chain: true, labels: false };
-const STORE = "mtb-kin-model-v1";
+const STORE = "mtb-kin-model-v2";
 
 function load() {
-  try { const s = localStorage.getItem(STORE); if (s) { const m = JSON.parse(s); if (m && m.points && m.links) return m; } } catch (e) {}
+  try { const s = localStorage.getItem(STORE); if (s) { const m = JSON.parse(s); if (m && m.version === 2) return m; } } catch (e) {}
   return makeModel("horst");
 }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(model)); } catch (e) {} }
 
 // ---------- Champs ----------
-const FIELDS = {
-  "f-shock": [["shockStroke", "Course amortisseur (mm)"], ["sag", "Sag (% course)"], ["cogHeight", "Hauteur CdG (mm)"]],
-  "f-drive": [["chainring", "Plateau (dents)"], ["cog0", "Pignon 1 (dents)"], ["cog1", "Pignon 2 (dents)"], ["cog2", "Pignon 3 (dents)"], ["rearR", "Rayon roue AR (mm)"], ["frontR", "Rayon roue AV (mm)"]],
-  "f-front": [["forkA2C", "Fourche axe-té (mm)"], ["forkOffset", "Déport (mm)"], ["forkTravel", "Débattement fourche"], ["forkSag", "Sag fourche (%)"], ["saddleHeight", "Hauteur de selle (mm)"]],
-};
-function getField(k) { return k.startsWith("cog") && k !== "cogHeight" ? model.setup.cogs[+k[3]] : model.setup[k]; }
-function setField(k, v) { if (k.startsWith("cog") && k !== "cogHeight") model.setup.cogs[+k[3]] = v; else model.setup[k] = v; }
+const opt = (v: any, label: any, sel: boolean) => `<option value="${v}"${sel ? " selected" : ""}>${label}</option>`;
+const num = (id: string, label: string, value: number, step = 0.5) =>
+  `<label>${label}<input id="${id}" type="number" step="${step}" value="${+value.toFixed(2)}"></label>`;
+const sel = (id: string, label: string, options: string, cls = "") => `<label class="${cls}">${label}<select id="${id}">${options}</select></label>`;
+function onNum(id: string, fn: (v: number) => void, min = -Infinity) {
+  $(id).addEventListener("change", e => { const v = parseFloat(e.target.value); if (isFinite(v) && v >= min) { fn(v); changed(); } else buildFields(); });
+}
+function onSel(id: string, fn: (v: string) => void) { $(id).addEventListener("change", e => { fn(e.target.value); changed(); }); }
+/** Après une modification : recalcul, puis mise à jour des champs dépendants. */
+function changed(rebuild = true) { forkComp = Math.min(forkComp, model.setup.fork.travel); recompute(true); if (rebuild) { buildFields(); buildPoints(); } }
+
+const FRAME_FIELDS: [keyof FrameDims, string, number][] = [
+  ["reach", "Reach (mm)", 1], ["stack", "Stack (mm)", 1], ["headAngle", "Head angle (°)", 0.1], ["headTube", "Head tube length (mm)", 1],
+  ["seatAngle", "Seat angle, actual (°)", 0.1], ["seatTube", "Seat tube length (mm)", 1], ["chainstay", "Chainstay (mm)", 1], ["bbDrop", "BB drop (mm)", 1],
+];
 function buildFields() {
-  for (const [box, list] of Object.entries(FIELDS)) {
-    $(box).innerHTML = list.map(([k, l]) => `<label>${l}<input id="in-${k}" type="number" step="any" value="${getField(k)}"></label>`).join("");
-    for (const [k] of list) $("in-" + k).addEventListener("change", e => {
-      const v = parseFloat(e.target.value);
-      if (!isFinite(v) || v <= 0 && k !== "forkSag") { e.target.value = getField(k); return; }
-      setField(k, v); recompute(true);
-    });
+  const g = model.setup, f = readFrame(model);
+  $("presetDesc").textContent = model.preset && LAYOUTS[model.preset] ? LAYOUTS[model.preset].description : "Custom layout";
+  $("f-frame").innerHTML = FRAME_FIELDS.map(([k, l, st]) => num("fr-" + k, l, f[k], st)).join("");
+  FRAME_FIELDS.forEach(([k]) => onNum("fr-" + k, v => writeFrame(model, k, v)));
+
+  const sizes = SHOCKS[g.shock.mount].sizes;
+  $("f-shock").innerHTML =
+    sel("sh-mount", "Mount", (Object.keys(SHOCKS) as ShockMount[]).map(k => opt(k, SHOCKS[k].label, k === g.shock.mount)).join("")) +
+    sel("sh-size", "Size (eye-to-eye × stroke)", sizes.map(([e, s], i) => opt(i, `${e} × ${s}`, e === g.shock.eye2eye && s === g.shock.stroke)).join("") +
+      (sizes.some(([e, s]) => e === g.shock.eye2eye && s === g.shock.stroke) ? "" : opt(-1, `${g.shock.eye2eye} × ${g.shock.stroke} (custom)`, true))) +
+    num("sh-sag", "Sag (% stroke)", g.sag, 1);
+  onSel("sh-mount", v => {
+    // Nouvelle famille : on garde la taille dont la course est la plus proche.
+    const list = SHOCKS[v as ShockMount].sizes;
+    const [e, s] = list.reduce((a, b) => (Math.abs(b[1] - g.shock.stroke) < Math.abs(a[1] - g.shock.stroke) ? b : a));
+    fitShock(model, v as ShockMount, e, s);
+  });
+  onSel("sh-size", v => { if (+v >= 0) fitShock(model, g.shock.mount, ...sizes[+v]); });
+  onNum("sh-sag", v => (g.sag = v), 0);
+
+  const fk = g.fork, wf = g.wheels.front, isCustom = !(fk.model in FORKS);
+  $("f-fork").innerHTML =
+    sel("fk-model", "Model", Object.entries(FORKS).map(([k, f]) => opt(k, f.name, k === fk.model)).join("") + opt("custom", "Custom", isCustom), "full") +
+    (isCustom
+      ? num("fk-travel", "Travel (mm)", fk.travel, 5) + num("fk-a2c", "Axle-to-crown (mm)", fk.a2c, 1) + num("fk-offset", "Offset (mm)", fk.offset, 1)
+      : sel("fk-travel", "Travel (mm)", FORKS[fk.model].travels.map(t => opt(t, t, t === fk.travel)).join("")) +
+        sel("fk-offset", "Offset (mm)", forkOffsets(fk.model, wf).map(o => opt(o, o, o === fk.offset)).join("")) +
+        `<label>Axle-to-crown<output>${fk.a2c.toFixed(1)} mm</output></label>`) +
+    num("fk-sag", "Sag (% travel)", fk.sag, 1);
+  onSel("fk-model", v => {
+    if (v === "custom") { fk.model = "custom"; return; }
+    const f = FORKS[v];
+    fk.model = v;
+    fk.travel = f.travels.reduce((a, b) => (Math.abs(b - fk.travel) < Math.abs(a - fk.travel) ? b : a));
+    const offs = forkOffsets(v, wf);
+    if (!offs.includes(fk.offset)) fk.offset = offs[0];
+    fk.a2c = forkA2C(v, wf, fk.travel);
+    forkComp = forkSagMM(model);
+  });
+  if (isCustom) {
+    onNum("fk-travel", v => { fk.travel = v; forkComp = forkSagMM(model); }, 1);
+    onNum("fk-a2c", v => (fk.a2c = v), 100);
+    onNum("fk-offset", v => (fk.offset = v), 0);
+  } else {
+    onSel("fk-travel", v => { fk.travel = +v; fk.a2c = forkA2C(fk.model, wf, fk.travel); forkComp = forkSagMM(model); });
+    onSel("fk-offset", v => (fk.offset = +v));
   }
+  onNum("fk-sag", v => { fk.sag = v; forkComp = forkSagMM(model); }, 0);
+
+  const w = g.wheels, wheelOpts = (cur: WheelSize) => (Object.keys(WHEELS) as WheelSize[]).map(k => opt(k, WHEELS[k].label, k === cur)).join("");
+  const tireOpts = (cur: number) => TIRE_WIDTHS.map(t => opt(t, `${t}"`, t === cur)).join("");
+  $("f-wheels").innerHTML =
+    sel("wh-front", "Front wheel", wheelOpts(w.front)) + sel("wh-ftire", "Front tyre", tireOpts(w.frontTire)) +
+    sel("wh-rear", "Rear wheel", wheelOpts(w.rear)) + sel("wh-rtire", "Rear tyre", tireOpts(w.rearTire)) +
+    `<label class="full">Outside radius<output>front ${frontRadius(model).toFixed(1)} mm · rear ${rearRadius(model).toFixed(1)} mm</output></label>`;
+  onSel("wh-front", v => { w.front = v as WheelSize; if (fk.model in FORKS) { fk.a2c = forkA2C(fk.model, w.front, fk.travel); const o = forkOffsets(fk.model, w.front); if (!o.includes(fk.offset)) fk.offset = o[0]; } });
+  onSel("wh-ftire", v => (w.frontTire = +v));
+  onSel("wh-rear", v => (w.rear = v as WheelSize));
+  onSel("wh-rtire", v => (w.rearTire = +v));
+
+  const teeth = (list: number[], cur: number) => list.map(t => opt(t, t, t === cur)).join("") + (list.includes(cur) ? "" : opt(cur, cur, true));
+  $("f-drive").innerHTML =
+    sel("dr-ring", "Chainring", teeth(CHAINRINGS, g.chainring)) +
+    g.cogs.map((c, i) => sel("dr-cog" + i, `Cog ${i + 1}`, teeth(COGS, c))).join("") +
+    `<label class="check full"><input type="checkbox" id="dr-idler" ${model.idler ? "checked" : ""}> Idler pulley</label>` +
+    (model.idler ? sel("dr-idlerT", "Idler teeth", teeth(IDLERS, g.idlerTeeth)) : "");
+  onSel("dr-ring", v => (g.chainring = +v));
+  g.cogs.forEach((_, i) => onSel("dr-cog" + i, v => (g.cogs[i] = +v)));
+  $("dr-idler").addEventListener("change", e => { setIdler(model, e.target.checked); changed(); });
+  if (model.idler) onSel("dr-idlerT", v => (g.idlerTeeth = +v));
+
+  $("f-rider").innerHTML = num("rd-cog", "CoG height (mm)", g.cogHeight, 10) + num("rd-saddle", "Saddle height (mm)", g.saddleHeight, 5);
+  onNum("rd-cog", v => (g.cogHeight = v), 1);
+  onNum("rd-saddle", v => (g.saddleHeight = v), 1);
 }
 function buildPoints() {
   $("pts").innerHTML = Object.entries(model.points).map(([id, p]) =>
@@ -53,7 +130,7 @@ function buildPoints() {
   for (const id of Object.keys(model.points)) for (const a of ["x", "y"]) {
     $(`p${a}-${id}`).addEventListener("change", e => {
       const v = parseFloat(e.target.value); if (!isFinite(v)) return;
-      model.points[id][a] = v; recompute(true);
+      model.points[id][a] = v; changed();
     });
   }
 }
@@ -67,14 +144,14 @@ function syncPointInputs() {
 
 // ---------- Calcul ----------
 function recompute(persist) {
-  const r = sweep(model);
+  const r = sweep(model, { forkComp });
   if (!r.error || !res || res.error) res = r; // garde la dernière pose valide à l'écran
   const err = $("err");
   if (r.error) { err.hidden = false; err.textContent = r.error; }
-  else if (!res.complete) { err.hidden = false; err.textContent = `Le mécanisme se bloque après ${res.total.toFixed(1)} mm : la course complète de l'amortisseur n'est pas atteinte.`; }
+  else if (!res.complete) { err.hidden = false; err.textContent = `The linkage locks after ${res.total.toFixed(1)} mm: the full shock stroke is not reached.`; }
   else err.hidden = true;
   if (!res.error) {
-    const target = model.setup.sag / 100 * model.setup.shockStroke;
+    const target = model.setup.sag / 100 * model.setup.shock.stroke;
     sagIdx = res.poses.findIndex(p => res.L0 - p.shock >= target);
     if (sagIdx < 0) sagIdx = res.poses.length - 1;
     poseIdx = Math.min(poseIdx, res.poses.length - 1);
@@ -104,11 +181,11 @@ function drawBike() {
   const pose = drag ? drag.pose : res.poses[poseIdx];
   const T = drag ? drag.T : pose.T;
   const P = id => T.fwd(pose.P[id] || model.points[id]);
-  const g = model.setup, A = P(model.axle), F = T.fwd(res.F);
+  const g = model.setup, A = P(model.axle), F = T.fwd(res.F), Rr = rearRadius(model), Rf = frontRadius(model);
   // Cadrage fixe calculé à l'état détendu pour éviter que la vue saute.
   if (!view || !drag) {
     const p0 = res.poses[0], T0 = p0.T;
-    const xs = [T0.fwd(p0.P[model.axle]).x - g.rearR, T0.fwd(res.F).x + g.frontR];
+    const xs = [T0.fwd(p0.P[model.axle]).x - Rr, T0.fwd(res.F).x + Rf];
     const ymax = Math.max(g.cogHeight + 40, ...Object.values(model.points).map(p => T0.fwd(p).y)) + 30;
     const x0 = xs[0] - 40, x1 = xs[1] + 40, y0 = -40;
     const s = Math.min(w / (x1 - x0), h / (ymax - y0));
@@ -124,20 +201,22 @@ function drawBike() {
   ctx.strokeStyle = C.line; ctx.lineWidth = 1;
   line({ x: -2000, y: 0 }, { x: 3000, y: 0 });
   ctx.setLineDash([4, 4]); line({ x: pose.front.x - 140, y: g.cogHeight }, { x: pose.front.x + 60, y: g.cogHeight }); ctx.setLineDash([]);
-  ctx.fillStyle = C.muted; ctx.font = `11px ${C.mono}`; ctx.fillText("CdG", ...S({ x: pose.front.x - 136, y: g.cogHeight + 14 }));
+  ctx.fillStyle = C.muted; ctx.font = `11px ${C.mono}`; ctx.fillText("CoG", ...S({ x: pose.front.x - 136, y: g.cogHeight + 14 }));
   ctx.strokeStyle = C.grid; line(pose.front, { x: pose.front.x, y: g.cogHeight + 60 });
 
   // Roues
   ctx.strokeStyle = C.tire; ctx.lineWidth = Math.max(3, 55 * view.s);
-  ctx.globalAlpha = .18; circle(A, g.rearR - 28); circle(F, g.frontR - 28); ctx.globalAlpha = 1;
-  ctx.lineWidth = 1.5; circle(A, g.rearR); circle(F, g.frontR);
-  ctx.strokeStyle = C.rim; ctx.lineWidth = 1; circle(A, g.rearR - 60); circle(F, g.frontR - 60);
+  ctx.globalAlpha = .18; circle(A, Rr - 28); circle(F, Rf - 28); ctx.globalAlpha = 1;
+  ctx.lineWidth = 1.5; circle(A, Rr); circle(F, Rf);
+  ctx.strokeStyle = C.rim; ctx.lineWidth = 1; circle(A, Rr - 60); circle(F, Rf - 60);
 
   // Transmission
   if (show.chain && res.r1) {
     ctx.strokeStyle = C.muted; ctx.lineWidth = 1;
     circle(P("BB"), res.r1); circle(A, res.cogR[1]);
-    ctx.strokeStyle = C.s[1]; ctx.lineWidth = 2; line(pose.chain[1].t1, pose.chain[1].t2);
+    if (model.idler) circle(P(model.idler), 12.7 / (2 * Math.sin(Math.PI / g.idlerTeeth)));
+    ctx.strokeStyle = C.s[1]; ctx.lineWidth = 2;
+    for (const seg of pose.chain[1]) line(seg.t1, seg.t2);
   }
 
   // Trajectoire d'axe
@@ -189,7 +268,7 @@ function drawBike() {
   if (show.ic && pose.ic) {
     const [x, y] = S(pose.ic); ctx.strokeStyle = C.ic; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x - 11, y); ctx.lineTo(x + 11, y); ctx.moveTo(x, y - 11); ctx.lineTo(x, y + 11); ctx.stroke();
-    ctx.fillStyle = C.ic; ctx.font = `600 11px ${C.mono}`; ctx.fillText("CIR", x + 10, y - 10);
+    ctx.fillStyle = C.ic; ctx.font = `600 11px ${C.mono}`; ctx.fillText("IC", x + 10, y - 10);
   }
 
   // Pivots
@@ -209,12 +288,12 @@ function drawBike() {
 
 // ---------- Courbes ----------
 const CHARTS: any[] = [
-  { id: "lr", title: "Rapport de levier", unit: "", dec: 2, series: () => [{ name: "Levier", get: p => p.leverage }] },
+  { id: "lr", title: "Leverage ratio", unit: "", dec: 2, series: () => [{ name: "Leverage", get: p => p.leverage }] },
   { id: "as", title: "Anti-squat", unit: "%", dec: 0, series: () => model.setup.cogs.map((n, k) => ({ name: `${model.setup.chainring}×${n}`, get: p => p.antiSquat[k] })), ref: 100 },
   { id: "ar", title: "Anti-rise", unit: "%", dec: 0, series: () => [{ name: "Anti-rise", get: p => p.antiRise }], ref: 100, color: 2 },
   { id: "kb", title: "Pedal kickback", unit: "°", dec: 1, series: () => model.setup.cogs.map((n, k) => ({ name: `${model.setup.chainring}×${n}`, get: p => p.kickback[k] })) },
-  { id: "ap", title: "Trajectoire d'axe (recul)", unit: "mm", dec: 1, series: () => [{ name: "Δx axe", get: p => -p.axleX }] },
-  { id: "sh", title: "Course amortisseur utilisée", unit: "mm", dec: 1, series: () => [{ name: "Compression", get: p => res.L0 - p.shock }] },
+  { id: "ap", title: "Axle path (rearward)", unit: "mm", dec: 1, series: () => [{ name: "Rearward", get: p => -p.axleX }] },
+  { id: "sh", title: "Shock stroke used", unit: "mm", dec: 1, series: () => [{ name: "Stroke", get: p => res.L0 - p.shock }] },
 ];
 function buildCharts() {
   $("charts").innerHTML = CHARTS.map(c => `<section class="panel chart" id="ch-${c.id}"><h3>${c.title}</h3><div class="sub" id="sub-${c.id}"></div><canvas id="cv-${c.id}"></canvas><div class="tip" hidden id="tip-${c.id}"></div></section>`).join("");
@@ -280,21 +359,23 @@ const fmt = (v, d) => isFinite(v) ? v.toFixed(d).replace("-", "−") : "—";
 // ---------- Géométrie ----------
 function renderGeo() {
   if (!res || res.error) { $("geo").innerHTML = ""; return; }
-  const g0 = geometry(model, res.F, res.poses[0]), gs = geometry(model, res.F, res.poses[sagIdx]), gc = geometry(model, res.F, res.poses[poseIdx]);
-  const rows = Object.keys(g0).filter(k => k[0] !== "_");
-  const dec = u => (u === "°" ? 1 : 1);
-  $("geo").innerHTML = `<tr><th>Cote</th><th>Détendu</th><th>Sag ${model.setup.sag}%</th><th>Actuel</th></tr>` +
-    rows.map(k => `<tr><td>${k}</td><td>${fmt(g0[k][0], dec(g0[k][1]))}${g0[k][1] === "°" ? "°" : ""}</td><td>${fmt(gs[k][0], 1)}${gs[k][1] === "°" ? "°" : ""}</td><td>${fmt(gc[k][0], 1)}${gc[k][1] === "°" ? "°" : ""}</td></tr>`).join("");
+  const col = (P, fc: number) => { const { F, T } = groundFor(model, P, fc); return geometry(model, P, T, F); };
+  const g0 = col(res.poses[0].P, 0), gs = col(res.poses[sagIdx].P, forkSagMM(model)), gc = col(res.poses[poseIdx].P, forkComp);
+  const cell = (r) => `<td>${fmt(r[0], 1)}${r[1] === "°" ? "°" : ""}</td>`;
+  $("geo").innerHTML = `<tr><th>Measure</th><th>Static</th><th>Sag</th><th>Current</th></tr>` +
+    Object.keys(g0).map(k => `<tr><td>${k}</td>${cell(g0[k])}${cell(gs[k])}${cell(gc[k])}</tr>`).join("");
 }
 function renderReadout() {
   if (!res || res.error) { $("read").innerHTML = ""; return; }
   const p = res.poses[poseIdx], comp = res.L0 - p.shock;
   $("travel").max = res.poses.length - 1; $("travel").value = poseIdx;
   const k = 1;
+  $("forkComp").max = model.setup.fork.travel; $("forkComp").value = forkComp;
   $("read").innerHTML = [
-    ["Roue", `${p.travel.toFixed(1)} / ${res.total.toFixed(1)} mm`],
-    ["Amortisseur", `${comp.toFixed(1)} mm (${(comp / model.setup.shockStroke * 100).toFixed(0)} %)`],
-    ["Levier", fmt(p.leverage, 2)],
+    ["Wheel", `${p.travel.toFixed(1)} / ${res.total.toFixed(1)} mm`],
+    ["Shock", `${comp.toFixed(1)} mm (${(comp / model.setup.shock.stroke * 100).toFixed(0)} %)`],
+    ["Fork", `${forkComp.toFixed(1)} / ${model.setup.fork.travel} mm`],
+    ["Leverage", fmt(p.leverage, 2)],
     [`AS ${model.setup.chainring}×${model.setup.cogs[k]}`, fmt(p.antiSquat[k], 0) + " %"],
     ["AR", fmt(p.antiRise, 0) + " %"],
   ].map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join("");
@@ -321,60 +402,61 @@ $("bike").addEventListener("pointerdown", e => {
 $("bike").addEventListener("pointermove", e => {
   if (!drag) { const h = pickPoint(e); if (h !== hoverPt) { hoverPt = h; $("bike").style.cursor = h ? "grab" : "crosshair"; markRow(h); drawBike(); } return; }
   const w = drag.T.inv(screenToWorld(e)); model.points[drag.id].x = Math.round(w.x * 2) / 2; model.points[drag.id].y = Math.round(w.y * 2) / 2;
-  const r = sweep(model);
+  const r = sweep(model, { forkComp });
   if (!r.error) { res = r; drag.pose = (r as any).poses[0]; }
   else drag.pose = { ...drag.pose, P: { ...drag.pose.P, [drag.id]: { ...model.points[drag.id] } } };
   $("err").hidden = !r.error; if (r.error) $("err").textContent = r.error;
   syncPointInputs(); drawBike();
 });
-const endDrag = () => { if (!drag) return; drag = null; recompute(true); };
+const endDrag = () => { if (!drag) return; drag = null; changed(); };
 $("bike").addEventListener("pointerup", endDrag); $("bike").addEventListener("pointercancel", endDrag);
 function markRow(id) { document.querySelectorAll("#pts tr").forEach(tr => tr.classList.toggle("hl", (tr as HTMLElement).dataset.id === id)); }
 
 // ---------- Interface ----------
 $("travel").addEventListener("input", e => { poseIdx = +e.target.value; render(); });
-$("preset").innerHTML = Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join("");
-$("preset").addEventListener("change", e => { model = makeModel(e.target.value); poseIdx = 0; view = null; buildFields(); buildPoints(); recompute(true); });
-$("btnReset").addEventListener("click", () => { model = makeModel($("preset").value); poseIdx = 0; view = null; buildFields(); buildPoints(); recompute(true); });
-const TG = [["ic", "Centre instantané"], ["as", "Ligne anti-squat"], ["ar", "Ligne anti-rise"], ["path", "Trajectoire d'axe"], ["chain", "Chaîne"], ["labels", "Noms des points"]];
+$("forkComp").addEventListener("input", e => { forkComp = +e.target.value; recompute(false); });
+$("preset").innerHTML = Object.entries(LAYOUTS).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join("");
+$("preset").addEventListener("change", e => applyModel(makeModel(e.target.value)));
+$("btnReset").addEventListener("click", () => applyModel(makeModel($("preset").value)));
+const TG = [["ic", "Instant centre"], ["as", "Anti-squat line"], ["ar", "Anti-rise line"], ["path", "Axle path"], ["chain", "Chain"], ["labels", "Point names"]];
 $("toggles").innerHTML = TG.map(([k, l]) => `<label><input type="checkbox" id="tg-${k}" ${show[k] ? "checked" : ""}>${l}</label>`).join("");
 TG.forEach(([k]) => $("tg-" + k).addEventListener("change", e => { show[k] = e.target.checked; drawBike(); }));
 
 function csv() {
-  const s = model.setup, head = ["roue_mm", "amorti_mm", "levier", ...s.cogs.map(n => `AS_${s.chainring}x${n}`), "AR", ...s.cogs.map(n => `kickback_${s.chainring}x${n}`), "axe_x_mm", "axe_y_mm"];
+  const s = model.setup, head = ["wheel_travel_mm", "shock_stroke_mm", "leverage", ...s.cogs.map(n => `antisquat_${s.chainring}x${n}`), "antirise", ...s.cogs.map(n => `kickback_deg_${s.chainring}x${n}`), "axle_x_mm", "axle_y_mm"];
   return [head.join(";"), ...res.poses.map(p => [p.travel, res.L0 - p.shock, p.leverage, ...p.antiSquat, p.antiRise, ...p.kickback, p.P[model.axle].x, p.P[model.axle].y].map(v => isFinite(v) ? v.toFixed(3) : "").join(";"))].join("\n");
 }
-const PROJECT = [{ name: "Projet cinématique", extensions: ["mtbk", "json"] }];
-let fileName = "nouveau-projet.mtbk";
+const PROJECT = [{ name: "MTB kinematics project", extensions: ["mtbk", "json"] }];
+let fileName = "new-project.mtbk";
 function setFileName(n: string) { fileName = n; $("fileName").textContent = n; }
 function applyModel(m: BikeModel) {
-  model = m; view = null; poseIdx = 0;
-  $("preset").value = m.preset && m.preset in PRESETS ? m.preset : "horst";
+  model = m; view = null; poseIdx = 0; forkComp = forkSagMM(m);
+  $("preset").value = m.preset && m.preset in LAYOUTS ? m.preset : "horst";
   buildFields(); buildPoints(); recompute(true); poseIdx = sagIdx; render();
 }
 $("btnOpen").addEventListener("click", async () => {
   try {
     const f = await openText(PROJECT); if (!f) return;
     const m = JSON.parse(f.text);
-    if (!m.points || !m.links || !m.setup) throw new Error("format");
+    if (m.version !== 2 || !m.points || !m.links || !m.setup) throw new Error("format");
     applyModel(m); setFileName(f.name);
-  } catch (e) { showError("Ce fichier n'est pas un projet valide : il doit contenir points, links et setup."); }
+  } catch (e) { showError("This file is not a valid project (version 2 .mtbk file expected)."); }
 });
 $("btnSave").addEventListener("click", async () => {
   try { const n = await saveText(fileName, JSON.stringify(model, null, 2), PROJECT); if (n) setFileName(n); }
-  catch (e) { showError("Enregistrement impossible : " + e); }
+  catch (e) { showError("Could not save: " + e); }
 });
 $("btnCsv").addEventListener("click", async () => {
   if (!res || res.error) return;
-  try { await saveText(fileName.replace(/\.\w+$/, "") + "-courbes.csv", csv(), [{ name: "CSV", extensions: ["csv"] }]); }
-  catch (e) { showError("Export impossible : " + e); }
+  try { await saveText(fileName.replace(/\.\w+$/, "") + "-curves.csv", csv(), [{ name: "CSV", extensions: ["csv"] }]); }
+  catch (e) { showError("Could not export: " + e); }
 });
 $("btn3d").addEventListener("click", async () => {
   if (!res || res.error) return;
   const pose = res.poses[poseIdx];
   const base = fileName.replace(/\.\w+$/, "") + `-${pose.travel.toFixed(0)}mm`;
   try { await saveText(base + ".step", toStep(stepBodies(model, pose.P), base), [{ name: "STEP", extensions: ["step", "stp"] }]); }
-  catch (e) { showError("Export 3D impossible : " + e); }
+  catch (e) { showError("Could not export 3D: " + e); }
 });
 function showError(msg: string) { const err = $("err"); err.hidden = false; err.textContent = msg; }
 
@@ -382,7 +464,5 @@ new ResizeObserver(() => { view = null; render(); }).observe(document.querySelec
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
 new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-model = load();
-$("preset").value = model.preset && model.preset in PRESETS ? model.preset : "horst";
-buildFields(); buildPoints(); buildCharts(); recompute(false);
-poseIdx = sagIdx; render();
+buildCharts();
+applyModel(load());

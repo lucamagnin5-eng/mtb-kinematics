@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { compile, geometry, sweep, type SweepResult } from "../src/core/kinematics";
-import { PRESETS, makeModel } from "../src/core/presets";
+import { compile, geometry, groundFor, frontRadius, rearRadius, sweep, type SweepResult } from "../src/core/kinematics";
+import { LAYOUTS, makeModel } from "../src/core/presets";
 import type { BikeModel, Vec } from "../src/core/types";
 
 type Ok = Exclude<SweepResult, { error: string }>;
@@ -14,6 +14,7 @@ function directMountSinglePivot(): BikeModel {
   const m = makeModel("horst");
   const keep = ["BB", "HT", "HB", "ST", "SB"];
   m.points = Object.fromEntries(Object.entries(m.points).filter(([k]) => keep.includes(k)));
+  m.idler = null;
   m.points.MP = { x: -30, y: 90, fixed: true, label: "Pivot principal" };
   m.points.SF = { x: 150, y: 260, fixed: true, label: "Ancrage amortisseur" };
   m.points.A = { x: -437, y: 34, fixed: false, label: "Axe" };
@@ -22,7 +23,7 @@ function directMountSinglePivot(): BikeModel {
   m.bodies = [["MP", "A", "R"]];
   m.shock = ["SF", "R"];
   m.axleBody = ["MP", "A"];
-  m.setup.shockStroke = 55;
+  m.setup.shock.stroke = 55;
   return m;
 }
 
@@ -33,12 +34,13 @@ const rotAbout = (p: Vec, c: Vec, a: number): Vec => ({
 
 describe("solveur", () => {
   it("chaque modèle d'exemple a exactement 1 degré de liberté et atteint la fin de course", () => {
-    for (const key of Object.keys(PRESETS)) {
+    for (const key of Object.keys(LAYOUTS)) {
       const m = makeModel(key);
       expect(compile(m).dof).toBe(1);
       const r = ok(sweep(m));
       expect(r.complete).toBe(true);
-      expect(r.L0 - r.poses.at(-1)!.shock).toBeCloseTo(m.setup.shockStroke, 6);
+      expect(r.L0 - r.poses.at(-1)!.shock).toBeCloseTo(m.setup.shock.stroke, 6);
+      expect(r.L0).toBeCloseTo(m.setup.shock.eye2eye, 9);
     }
   });
 
@@ -51,7 +53,7 @@ describe("solveur", () => {
 
   it("donne le même rapport de levier que la solution analytique d'un monopivot", () => {
     const m = directMountSinglePivot();
-    const r = ok(sweep(m, 0.25));
+    const r = ok(sweep(m, { step: 0.25 }));
     const { MP, A, R, SF } = m.points;
     // Angle de bras pour une hauteur d'axe donnée, puis longueur d'amortisseur.
     const shockAt = (travel: number) => {
@@ -80,7 +82,7 @@ describe("solveur", () => {
 
   it("trouve le CIR d'un Horst à l'intersection des deux biellettes", () => {
     const m = makeModel("horst");
-    const r = ok(sweep(m, 0.1));
+    const r = ok(sweep(m, { step: 0.1 }));
     const p = r.poses[300];
     // Droites base (MP–H) et biellette (RP–S) dans le repère sol.
     const f = (id: string) => p.T.fwd(p.P[id]);
@@ -96,7 +98,7 @@ describe("solveur", () => {
   it("signale un mécanisme mal contraint", () => {
     const m = makeModel("horst");
     m.links = m.links.slice(1);
-    expect(sweep(m).error).toMatch(/degré/);
+    expect(sweep(m).error).toMatch(/degree/);
   });
 });
 
@@ -105,17 +107,17 @@ describe("géométrie", () => {
     const m = makeModel("horst");
     const r = ok(sweep(m));
     for (const p of [r.poses[0], r.poses.at(-1)!]) {
-      expect(p.T.fwd(p.P.A).y).toBeCloseTo(m.setup.rearR, 9);
-      expect(p.T.fwd(r.F).y).toBeCloseTo(m.setup.frontR, 9);
+      expect(p.T.fwd(p.P.A).y).toBeCloseTo(rearRadius(m), 9);
+      expect(p.T.fwd(r.F).y).toBeCloseTo(frontRadius(m), 9);
     }
   });
 
   it("donne un angle de direction cohérent avec le tube de direction", () => {
     const m = makeModel("horst");
     const r = ok(sweep(m));
-    const g = geometry(m, r.F, r.poses[0]);
+    const g = geometry(m, r.poses[0].P, r.poses[0].T, r.F);
     const { HT, HB } = m.points;
     const raw = 180 - (Math.atan2(HT.y - HB.y, HT.x - HB.x) * 180) / Math.PI;
-    expect(g["Angle de direction"][0]).toBeCloseTo(raw - r.poses[0].T.pitch, 9);
+    expect(g["Head angle"][0]).toBeCloseTo(raw - r.poses[0].T.pitch, 9);
   });
 });

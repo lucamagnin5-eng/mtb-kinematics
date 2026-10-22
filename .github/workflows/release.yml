@@ -39,7 +39,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: "Atelier cinématique MTB v__VERSION__"
+          releaseName: "MTB Kinematics Lab v__VERSION__"
           releaseBody: "Installeurs Windows (.msi / .exe) et macOS (.dmg)."
           releaseDraft: true
           args: ${{ matrix.args }}
