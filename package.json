@@ -1,20 +1,22 @@
 {
   "name": "mtb-kinematics",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Logiciel de géométrie et de cinématique de suspension VTT",
+  "description": "Logiciel de g\u00e9om\u00e9trie et de cin\u00e9matique de suspension VTT",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:web": "vite build --config vite.web.config.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
     "typescript": "~5.9",
     "vite": "^7.3.7",
+    "vite-plugin-singlefile": "^2.3.4",
     "vitest": "^3.2.7"
   },
   "dependencies": {
